@@ -10,6 +10,5 @@ wheels/
 .venv
 out/
 src/
-transcribe.py
 .agents/
 .claude/

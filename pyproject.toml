@@ -15,6 +15,9 @@ dependencies = [
 [project.scripts]
 groq-plus-ffmpeg = "groq_plus_ffmpeg:main"
 
+[tool.uv]
+package = false
+
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]
 build-backend = "uv_build"
