@@ -1,8 +1,9 @@
-// Drives the real uploader JS from app.py against a live server on :8599.
-// Usage: python extracts app._UP_JS -> app_component.mjs, then: node test_upload_js.mjs
+// Drives the real uploader JS from ui.py against a live server.
+// Usage: python extracts ui._UP_JS -> app_component.mjs, then: node test_upload_js.mjs
+// UPLOAD_MODE=noapi + UPLOAD_BASE=<server without routes> verifies the noapi fallback.
 import crypto from "node:crypto"
 
-const BASE = "http://localhost:8599"
+const BASE = process.env.UPLOAD_BASE || "http://localhost:8599"
 const RUN = Date.now().toString(36) // unique id keeps server state from prior runs away
 const realFetch = globalThis.fetch
 globalThis.fetch = (url, opts) =>
@@ -60,6 +61,29 @@ async function resume() {
   console.log("resume OK")
 }
 
-await upload("jstest" + RUN)
-await resume()
-console.log("JS upload ALL OK")
+async function expectNoApi() {
+  const states = {}
+  const { parentElement, els } = newDom()
+  comp({
+    data: { uploadId: "noapi" + RUN },
+    parentElement,
+    setStateValue: (k, v) => { states[k] = v },
+  })
+  els["#pick"].files = [file]
+  els["#go"].onclick()
+  const t0 = Date.now()
+  while (!states.status && Date.now() - t0 < 30000) {
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  // server without /api/upload serves HTML -> must report noapi, not a JSON error
+  if (states.status !== "noapi") throw new Error("status=" + states.status)
+  console.log("noapi OK")
+}
+
+if (process.env.UPLOAD_MODE === "noapi") {
+  await expectNoApi()
+} else {
+  await upload("jstest" + RUN)
+  await resume()
+  console.log("JS upload ALL OK")
+}

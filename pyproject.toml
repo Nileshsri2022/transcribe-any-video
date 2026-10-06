@@ -1,7 +1,7 @@
 [project]
 name = "groq-plus-ffmpeg"
 version = "0.1.0"
-description = "Add your description here"
+description = "Transcribe long video/audio to text + SRT using ffmpeg and Groq Whisper"
 readme = "README.md"
 authors = [
     { name = "Nileshsri2022", email = "2022021140@mmmut.ac.in" }

@@ -1,5 +1,6 @@
 """Smoke tests: chunked upload API (live server) + convert_to_mp3 + stage routing."""
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -8,40 +9,41 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-import app as ui
+import ui as ui
 
 BASE = "http://localhost:8599"
 PARTS = Path("uploads")
 
 
-def req(method, url, data=None):
-    r = urllib.request.Request(BASE + url, data=data, method=method)
+def req(base, method, url, data=None):
+    r = urllib.request.Request(base + url, data=data, method=method)
     with urllib.request.urlopen(r, timeout=30) as resp:
         return json.load(resp)
 
 
-def wait_server():
+def wait_server(base):
     for _ in range(90):
         try:
-            urllib.request.urlopen(BASE + "/", timeout=2)
+            urllib.request.urlopen(base + "/", timeout=2)
             return
         except Exception:
             time.sleep(1)
     sys.exit("server did not start")
 
 
-def ensure_server():
+def ensure_server(port, entrypoint):
+    base = f"http://localhost:{port}"
     try:
-        urllib.request.urlopen(BASE + "/", timeout=2)
+        urllib.request.urlopen(base + "/", timeout=2)
         return None  # already running
     except Exception:
         pass
     p = subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", "main.py",
-         "--server.headless", "true", "--server.port", "8599"],
+        [sys.executable, "-m", "streamlit", "run", entrypoint,
+         "--server.headless", "true", "--server.port", str(port)],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
-    wait_server()
+    wait_server(base)
     return p
 
 
@@ -51,7 +53,7 @@ def test_js_upload():
         print("js upload SKIP (no node)")
         return
     subprocess.run(
-        [sys.executable, "-c", "import app; open('app_component.mjs','w',encoding='utf-8').write(app._UP_JS)"],
+        [sys.executable, "-c", "import ui; open('app_component.mjs','w',encoding='utf-8').write(ui._UP_JS)"],
         check=True, capture_output=True,
     )
     subprocess.run(["node", "test_upload_js.mjs"], check=True)
@@ -59,39 +61,49 @@ def test_js_upload():
     print("js upload OK")
 
 
-def test_upload_route():
-    st = req("GET", "/api/upload?id=t1abc")
+def test_noapi_js():
+    """The uploader JS must fall back cleanly when /api/upload is missing."""
+    if not shutil.which("node"):
+        print("noapi js SKIP (no node)")
+        return
+    env = {**os.environ, "UPLOAD_MODE": "noapi", "UPLOAD_BASE": "http://localhost:8597"}
+    subprocess.run(["node", "test_upload_js.mjs"], check=True, env=env)
+    print("noapi js OK")
+
+
+def test_upload_route(base):
+    st = req(base, "GET", "/api/upload?id=t1abc")
     assert st["received"] == 0 and st["size"] == 0, st
 
     b1 = b"x" * 1000
-    r = req("POST", "/api/upload?id=t1abc&offset=0&name=vid.mp4&size=1500", b1)
+    r = req(base, "POST", "/api/upload?id=t1abc&offset=0&name=vid.mp4&size=1500", b1)
     assert r["received"] == 1000, r
 
-    st = req("GET", "/api/upload?id=t1abc")
+    st = req(base, "GET", "/api/upload?id=t1abc")
     assert st == {"received": 1000, "name": "vid.mp4", "size": 1500}, st
 
     # offset out of sync -> server reports truth, no append
-    r = req("POST", "/api/upload?id=t1abc&offset=500&name=vid.mp4&size=1500", b"y" * 100)
+    r = req(base, "POST", "/api/upload?id=t1abc&offset=500&name=vid.mp4&size=1500", b"y" * 100)
     assert r["received"] == 1000, r
 
     # resume append
-    r = req("POST", "/api/upload?id=t1abc&offset=1000&name=vid.mp4&size=1500", b"y" * 500)
+    r = req(base, "POST", "/api/upload?id=t1abc&offset=1000&name=vid.mp4&size=1500", b"y" * 500)
     assert r["received"] == 1500, r
     assert (PARTS / "t1abc.part").read_bytes() == b1 + b"y" * 500
 
     # restart from offset 0 wipes partial
-    r = req("POST", "/api/upload?id=t1abc&offset=0&name=vid.mp4&size=4", b"abcd")
+    r = req(base, "POST", "/api/upload?id=t1abc&offset=0&name=vid.mp4&size=4", b"abcd")
     assert r["received"] == 4, r
     assert (PARTS / "t1abc.part").read_bytes() == b"abcd"
 
     # traversal name sanitized
-    req("POST", "/api/upload?id=t2def&offset=0&name=../../evil.mp4&size=3", b"abc")
+    req(base, "POST", "/api/upload?id=t2def&offset=0&name=../../evil.mp4&size=3", b"abc")
     meta = json.loads((PARTS / "t2def.json").read_text(encoding="utf-8"))
     assert meta["name"] == "evil.mp4", meta
 
     # bad id rejected
     try:
-        req("GET", "/api/upload?id=../evil")
+        req(base, "GET", "/api/upload?id=../evil")
         raise AssertionError("bad id accepted")
     except urllib.error.HTTPError as e:
         assert e.code == 400, e.code
@@ -150,10 +162,22 @@ def test_kind():
     print("kind_of OK")
 
 
+def test_noapi_fallback():
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file("ui.py")
+    at.session_state["upl"] = {"status": "noapi"}
+    at.run()
+    assert not at.exception, at.exception
+    assert len(at.warning) == 1, [str(w.value) for w in at.warning]
+    assert len(at.file_uploader) == 1
+    print("noapi fallback OK")
+
+
 def test_app_stages():
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_file("app.py")
+    at = AppTest.from_file("ui.py")
     at.run()
     assert not at.exception, at.exception
     assert at.session_state["stage"] == "input"
@@ -193,13 +217,35 @@ def test_app_stages():
 if __name__ == "__main__":
     test_kind()
     test_convert()
+    test_noapi_fallback()
     test_app_stages()
-    server = ensure_server()
+
+    server = ensure_server(8599, "main.py")
     try:
+        test_upload_route("http://localhost:8599")
         test_js_upload()
-        test_upload_route()
     finally:
         if server:
             server.terminate()
+    print("main.py entrypoint OK")
+
+    # whichever entrypoint Streamlit Cloud runs must serve the API — the
+    # deployed failure was /api/upload returning the SPA's HTML
+    server = ensure_server(8598, "app.py")
+    try:
+        test_upload_route("http://localhost:8598")
+    finally:
+        if server:
+            server.terminate()
+    print("app.py entrypoint OK")
+
+    # ui.py run directly has no routes — the JS must report noapi (fallback UI)
+    server = ensure_server(8597, "ui.py")
+    try:
+        test_noapi_js()
+    finally:
+        if server:
+            server.terminate()
+
     shutil.rmtree("uploads", ignore_errors=True)
     print("ALL OK")
