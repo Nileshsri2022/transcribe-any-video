@@ -1,0 +1,20 @@
+[project]
+name = "groq-plus-ffmpeg"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Nileshsri2022", email = "2022021140@mmmut.ac.in" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "groq>=1.7.0",
+    "streamlit>=1.65.0",
+]
+
+[project.scripts]
+groq-plus-ffmpeg = "groq_plus_ffmpeg:main"
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
