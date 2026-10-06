@@ -1,3 +1,13 @@
+---
+title: Transcribe Any Video
+emoji: 🎙️
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Groq Whisper Transcriber 🎙️
 
 Turn long videos or audio files (even 2 GB+) into a text transcript and an
@@ -34,13 +44,34 @@ streamlit run app.py              # or main.py — equivalent entrypoints
 
 CLI only (no UI): `python transcribe.py video.mp4 [--language en] [--model whisper-large-v3]`
 
-## Deploy to Streamlit Community Cloud
+## Deploy
 
-- **Main file path**: `app.py` (or `main.py` — both are `st.App` launchers
-  that mount the `/api/upload` routes; the UI itself lives in `ui.py`).
-- `requirements.txt` — Python deps (streamlit, groq, starlette).
-- `packages.txt` — apt deps (`ffmpeg`).
-- Add `GROQ_API_KEY` to the app's **Secrets**.
+### Hugging Face Space (recommended — full chunked uploads)
+
+The `Dockerfile` runs the whole app (UI + `/api/upload` routes) in one
+container on port 7860. HF builds and hosts it for free — no local Docker.
+
+1. Create a free [Hugging Face](https://huggingface.co) account, then a new
+   **Space** → SDK **Docker** → blank template.
+2. Space **Settings → Variables and secrets** → add secret `GROQ_API_KEY`.
+3. Push this repo to the Space:
+   ```bash
+   git remote add space https://huggingface.co/spaces/<your-username>/transcribe-any-video
+   git push space main
+   ```
+4. Live at `https://<your-username>-transcribe-any-video.hf.space` after the
+   build (~3 min).
+
+Notes: free Spaces sleep after ~48 h idle (wake ~1 min on next visit);
+uploads go through HF's proxy as 16 MB chunks (well under its ~50 MB
+per-request cap); a **private** Space limits use to your account, which
+protects your Groq free-tier quota.
+
+### Streamlit Community Cloud (limited)
+
+Main file `app.py` or `main.py`, secrets `GROQ_API_KEY`, `packages.txt` for
+ffmpeg. Cloud's edge blocks the custom upload API, so the app automatically
+falls back to Streamlit's built-in uploader (files up to ~200 MB).
 
 ## Tests
 

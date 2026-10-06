@@ -63,14 +63,13 @@ async function resume() {
 
 async function expectNoApi() {
   const states = {}
-  const { parentElement, els } = newDom()
+  const { parentElement } = newDom()
   comp({
     data: { uploadId: "noapi" + RUN },
     parentElement,
     setStateValue: (k, v) => { states[k] = v },
   })
-  els["#pick"].files = [file]
-  els["#go"].onclick()
+  // no click: the mount probe alone must detect the missing API
   const t0 = Date.now()
   while (!states.status && Date.now() - t0 < 30000) {
     await new Promise((r) => setTimeout(r, 200))

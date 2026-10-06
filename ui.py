@@ -134,6 +134,17 @@ export default function (component) {
   if (!go || !pick) return
   parentElement.__data = data
   parentElement.__sv = setStateValue
+  if (!parentElement.__probed) {
+    // Probe /api/upload once on mount so hosts that block custom routes
+    // (Streamlit Community Cloud) get the built-in uploader immediately,
+    // without a failed upload attempt first.
+    parentElement.__probed = true
+    fetch("/api/upload?id=" + data.uploadId)
+      .then((r) => jjson(r))
+      .catch((e) => {
+        if (e instanceof NoApi) setStateValue("status", "noapi")
+      })
+  }
   go.onclick = () => {
     const file = pick.files[0]
     if (!file) {
@@ -268,21 +279,6 @@ if ss.stage == "input":
     st.title("Video → Text + SRT")
 
     up_state = ss.get("upl", {})
-    if up_state.get("status") == "noapi":
-        # /api/upload routes missing (server not running the st.App entrypoint)
-        st.warning(
-            "Chunked upload isn't available on this server — using Streamlit's "
-            "built-in uploader instead (files up to ~200 MB)."
-        )
-        up = st.file_uploader("Video or audio file", type=UPLOAD_TYPES)
-        if up is not None:
-            final = UPLOADS / f"{ss.upload_id}-{up.name}"
-            if not final.exists() or final.stat().st_size != up.size:
-                UPLOADS.mkdir(exist_ok=True)
-                with open(final, "wb") as f:
-                    f.write(up.getbuffer())
-            go_stage(None, path=final, name=up.name)
-        st.stop()
     if up_state.get("status") == "done":
         name = up_state["name"]
         part = UPLOADS / f"{ss.upload_id}.part"
@@ -293,6 +289,25 @@ if ss.stage == "input":
             go_stage(None, path=final, name=name)
         st.error("Uploaded file missing — please upload again.")
         ss.pop("upl", None)
+    elif up_state.get("status") == "noapi":
+        # /api/upload routes missing — e.g. Streamlit Community Cloud's edge
+        # auth-challenges custom paths and they never reach the app
+        st.warning(
+            "This host doesn't pass the chunked upload API through to the app "
+            "(Streamlit Community Cloud blocks custom routes), so uploads use "
+            "Streamlit's built-in uploader — files up to ~200 MB. For multi-GB "
+            "videos, deploy to a Hugging Face Docker Space or run locally: "
+            "`streamlit run app.py`."
+        )
+        up = st.file_uploader("Video or audio file", type=UPLOAD_TYPES)
+        if up is not None:
+            final = UPLOADS / f"{ss.upload_id}-{up.name}"
+            if not final.exists() or final.stat().st_size != up.size:
+                UPLOADS.mkdir(exist_ok=True)
+                with open(final, "wb") as f:
+                    f.write(up.getbuffer())
+            go_stage(None, path=final, name=up.name)
+        st.stop()
     elif up_state.get("status") == "error":
         st.error(f"Upload failed: {up_state.get('error')}")
 
