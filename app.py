@@ -105,25 +105,21 @@ async function start(root, file) {
 
 export default function (component) {
   const { data, parentElement, setStateValue } = component
-  let root = parentElement.querySelector("#cu")
-  if (!root) {
-    root = document.createElement("div")
-    root.id = "cu"
-    root.innerHTML = `__UP_HTML__`
-    parentElement.appendChild(root)
-    root.querySelector("#go").onclick = () => {
-      const file = root.querySelector("#pick").files[0]
-      if (!file) {
-        root.querySelector("#msg").textContent = "Choose a file first"
-        return
-      }
-      start(root, file)
+  const go = parentElement.querySelector("#go")
+  const pick = parentElement.querySelector("#pick")
+  if (!go || !pick) return
+  parentElement.__data = data
+  parentElement.__sv = setStateValue
+  go.onclick = () => {
+    const file = pick.files[0]
+    if (!file) {
+      parentElement.querySelector("#msg").textContent = "Choose a file first"
+      return
     }
+    start(parentElement, file)
   }
-  root.__data = data
-  root.__sv = setStateValue
 }
-""".replace("__UP_HTML__", _UP_HTML)
+"""
 
 _upload_component = st.components.v2.component(
     "chunked_uploader", html=_UP_HTML, js=_UP_JS,

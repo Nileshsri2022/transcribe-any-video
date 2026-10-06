@@ -1,5 +1,6 @@
 """Smoke tests: chunked upload API (live server) + convert_to_mp3 + stage routing."""
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -42,6 +43,20 @@ def ensure_server():
     )
     wait_server()
     return p
+
+
+def test_js_upload():
+    import shutil as sh
+    if not sh.which("node"):
+        print("js upload SKIP (no node)")
+        return
+    subprocess.run(
+        [sys.executable, "-c", "import app; open('app_component.mjs','w',encoding='utf-8').write(app._UP_JS)"],
+        check=True, capture_output=True,
+    )
+    subprocess.run(["node", "test_upload_js.mjs"], check=True)
+    sh.rmtree("uploads", ignore_errors=True)
+    print("js upload OK")
 
 
 def test_upload_route():
@@ -171,7 +186,6 @@ def test_app_stages():
     assert at.session_state["stage"] == "input"
     assert not (PARTS / f"{uid}_work").exists()
     assert not (PARTS / f"{uid}.part").exists()
-    import shutil
     shutil.rmtree("missing_work", ignore_errors=True)
     print("app stages OK")
 
@@ -182,8 +196,10 @@ if __name__ == "__main__":
     test_app_stages()
     server = ensure_server()
     try:
+        test_js_upload()
         test_upload_route()
     finally:
         if server:
             server.terminate()
+    shutil.rmtree("uploads", ignore_errors=True)
     print("ALL OK")
